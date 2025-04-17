@@ -1,0 +1,761 @@
+# WayPoint Pet Grooming App Development Protocol
+
+⚠️ CRITICAL: DO NOT PROCEED TO NEXT PHASE WITHOUT COMPLETING TESTS ⚠️
+
+## Tech Stack Specifications (2025)
+
+- **Framework**: React Native 0.74+ with Expo SDK 52+
+- **Platform Focus**: Android 13+ (primary)
+- **Language**: TypeScript 5.4+ (strict mode)
+- **State Management**: Redux Toolkit 2.2+
+- **Navigation**: React Navigation 7.0+
+- **Database**: Firebase 10.0+ (Firestore v9 API) + Local SQLite (expo-sqlite 13.0+) for offline
+- **Authentication**: Firebase Authentication 10.0+
+- **Maps**: Google Maps API v3 + React Native Maps 1.8+ with Offline Maps
+- **Payments**: Stripe React Native SDK 3.0+
+- **Forms**: Formik 3.0+ + Yup 2.0+ validation
+- **API Calls**: Axios 2.0+ with offline queue
+- **Testing**: Jest 29+ + React Testing Library 15+
+- **Code Quality**: ESLint 9+ + Prettier 3+ + TypeScript 5.4+
+- **Build System**: EAS Build 5+ (Expo Application Services)
+- **Deployment**: Google Play Store
+- **CI/CD**: GitHub Actions with Modern Node (20+ LTS)
+
+⚠️ ALWAYS use the latest stable versions of all dependencies when starting the project.
+⚠️ DO NOT lock to specific outdated versions unless there are critical compatibility issues.
+⚠️ REQUIRE team approval and .clinerules update before introducing alternative libraries.
+⚠️ UPDATE version numbers in this document when upgrading major dependencies.
+
+## Phase 1: Planning & Architecture (DESIGN MODE)
+- What user problems does the feature solve?
+- How does the feature work offline?
+- What data synchronization strategy is required?
+- What UI/UX considerations are needed for mobile groomers?
+  □ One-handed operation while handling pets
+  □ High visibility in outdoor settings
+  □ Quick access to critical functions
+  □ Intuitive navigation between map and appointment details
+
+### Core UI Requirements
+- Main dashboard must include:
+  □ Map view with pet location markers
+  □ Color-coded routes between appointments
+  □ Daily appointment list with time, pet name, and service type
+  □ Pet profile images next to appointments
+  □ Route optimization button
+  □ Easy navigation between views
+
+### External Services Integration
+- Firebase integration:
+  □ Firestore for customer/pet data storage
+  □ Firebase Authentication for user management
+  □ Firebase Cloud Functions for backend processes
+  □ Firebase Storage for images
+  
+- Google Maps APIs:
+  □ Maps SDK for Android
+  □ Directions API for route planning
+  □ Distance Matrix API for time calculations
+  □ Places API for address lookup
+  □ Geocoding API for coordinate conversion
+  
+- Stripe integration:
+  □ Customer payment processing
+  □ Subscription management for SaaS model
+  □ Receipt generation
+  □ Payout tracking for groomers
+
+## Phase 2: Setup (BOOTSTRAP MODE)
+```bash
+# Initialize React Native project with Expo
+npx create-expo-app WayPoint --template expo-template-blank-typescript
+cd WayPoint
+
+# CRITICAL: Clean up default structure to match our architecture
+# First, examine the created structure
+ls -la
+
+# Remove default structure we won't use (avoid duplicate folders)
+rm -rf assets
+rm -rf components 
+rm App.tsx
+
+# Create our project structure to avoid conflicts
+mkdir -p src/{assets,components,screens,navigation,hooks,services,store,utils,constants,types,test}
+mkdir -p src/components/{common,customers,pets,appointments,routing,payments}
+mkdir -p src/screens/{auth,dashboard,customers,pets,appointments,routing,payments,settings}
+mkdir -p src/services/{api,database,sync,location,notifications}
+mkdir -p src/store/{slices,selectors,middleware}
+mkdir -p src/test/{mocks,fixtures,helpers}
+
+# Create new App root that imports from our structure
+cat > App.tsx << 'EOL'
+import React from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Provider } from 'react-redux';
+import { NavigationContainer } from '@react-navigation/native';
+
+// Import from our structure
+import AppNavigator from './src/navigation/AppNavigator';
+import { store } from './src/store';
+
+export default function App() {
+  return (
+    <Provider store={store}>
+      <SafeAreaProvider>
+        <NavigationContainer>
+          <AppNavigator />
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </Provider>
+  );
+}
+EOL
+
+# Install essential dependencies
+npm install --save \
+  @react-navigation/native \
+  @react-navigation/native-stack \
+  @react-navigation/bottom-tabs \
+  react-native-screens \
+  react-native-safe-area-context \
+  expo-sqlite \
+  expo-location \
+  expo-file-system \
+  expo-sharing \
+  expo-notifications \
+  expo-device \
+  react-native-maps \
+  react-native-maps-directions \
+  react-native-calendars \
+  @reduxjs/toolkit \
+  react-redux \
+  redux-persist \
+  formik \
+  yup \
+  date-fns \
+  axios \
+  lodash.debounce \
+  uuid
+
+# Firebase dependencies
+npm install --save \
+  firebase \
+  @react-native-firebase/app \
+  @react-native-firebase/auth \
+  @react-native-firebase/firestore \
+  @react-native-firebase/storage \
+  @react-native-firebase/functions
+
+# Google Maps API dependencies
+npm install --save \
+  @googlemaps/google-maps-services-js \
+  @googlemaps/polyline-codec
+
+# Stripe dependencies
+npm install --save \
+  @stripe/stripe-react-native \
+  @stripe/stripe-js
+
+# Install development dependencies
+npm install --save-dev \
+  @testing-library/react-native \
+  @testing-library/jest-native \
+  jest-expo \
+  eslint-config-universe \
+  eslint-plugin-react-hooks \
+  eslint-plugin-testing-library \
+  eslint-plugin-jest \
+  prettier \
+  husky \
+  lint-staged \
+  madge \
+  depcheck \
+  expo-doctor
+  
+# Initialize git and husky hooks
+git init
+npx husky install
+npx husky add .husky/pre-commit "npx lint-staged && npm run typecheck"
+npx husky add .husky/pre-push "npm run test"
+
+# Create env configuration for API keys
+cat > src/constants/config.ts << 'EOL'
+export const FIREBASE_CONFIG = {
+  apiKey: process.env.FIREBASE_API_KEY,
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.FIREBASE_APP_ID,
+  measurementId: process.env.FIREBASE_MEASUREMENT_ID,
+};
+
+export const GOOGLE_MAPS_CONFIG = {
+  apiKey: process.env.GOOGLE_MAPS_API_KEY,
+};
+
+export const STRIPE_CONFIG = {
+  publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+};
+EOL
+
+# Create .env files (add to .gitignore)
+cat > .env.example << 'EOL'
+# Firebase Configuration
+FIREBASE_API_KEY=your_api_key_here
+FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+FIREBASE_PROJECT_ID=your_project_id
+FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+FIREBASE_APP_ID=your_app_id
+FIREBASE_MEASUREMENT_ID=your_measurement_id
+
+# Google Maps API
+GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+
+# Stripe API
+STRIPE_PUBLISHABLE_KEY=your_stripe_publishable_key
+EOL
+
+cp .env.example .env
+
+# Add .env to .gitignore
+echo ".env" >> .gitignore
+```
+
+## Phase 3: Core Screen Implementation
+
+### Dashboard/Dispatch Screen (Reference UI Mock)
+- File: `src/screens/dashboard/DispatchScreen.tsx`
+- Implementation MUST include:
+  ```
+  - Header with "Dispatch" title and icons (calendar, notifications, profile)
+  - Split view layout:
+    - Left side: Map component with:
+      - Pet location markers with pet icons
+      - Color-coded route lines between locations
+      - Neighborhood labels
+      - "Optimize" button for route optimization
+    - Right side: Appointments list with:
+      - "Today's Appointments" heading
+      - Chronologically ordered appointments
+      - Time display (e.g., "9:00 AM")
+      - Pet photo
+      - Pet name (e.g., "Bella", "Loki")
+      - Service type (e.g., "Dog Walking", "Pet Sitting")
+  - Bottom navigation bar with tabs
+  ```
+
+- File: `src/components/routing/RouteMap.tsx`
+- Implementation MUST include:
+  ```
+  - Map component using react-native-maps
+  - Custom marker components for pet locations
+  - Polyline component for route visualization
+  - Optimize button overlay
+  - Offline map caching functionality
+  - Loading and error states
+  ```
+
+- File: `src/components/appointments/AppointmentList.tsx`
+- Implementation MUST include:
+  ```
+  - FlatList of appointment items
+  - Appointment item components with:
+    - Time display
+    - Pet image with cached images
+    - Pet name
+    - Service type indicator
+  - Pull-to-refresh functionality
+  - Empty state handling
+  - Loading state
+  ```
+
+### Firebase Integration
+- File: `src/services/database/firebaseConfig.ts`
+- Implementation MUST include:
+  ```
+  - Firebase initialization
+  - Authentication setup
+  - Firestore collection structure:
+    - customers
+    - pets
+    - appointments
+    - services
+    - routes
+    - payments
+  - Offline persistence configuration
+  ```
+
+### Offline Data Handling
+- File: `src/services/sync/syncManager.ts`
+- Implementation MUST include:
+  ```
+  - Queue for pending API operations
+  - Conflict resolution strategy
+  - Background sync when network is available
+  - Local SQLite database for offline storage
+  ```
+
+### Google Maps Integration
+- File: `src/services/location/mapsService.ts`
+- Implementation MUST include:
+  ```
+  - Maps initialization
+  - Route calculation between appointments
+  - Geocoding for addresses
+  - Distance and time calculation
+  - Optimize route algorithm
+  ```
+
+### Stripe Payment Integration
+- File: `src/services/payments/stripeService.ts`
+- Implementation MUST include:
+  ```
+  - Stripe initialization
+  - Payment intent creation
+  - Payment method handling
+  - Receipt generation
+  - Subscription management
+  ```
+
+## Phase 4: Testing Guidelines
+
+<thinking>
+BEFORE moving to release, I MUST verify:
+□ Have I tested EVERY feature with offline functionality?
+□ Have I run ALL quality checks?
+□ Have I documented the test coverage?
+□ Have I tested on ACTUAL Android devices, not just emulators?
+□ Have I verified ALL imports point to the correct paths?
+□ Have I confirmed there are NO duplicate files or structure issues?
+□ Have I verified Firebase integration works properly?
+□ Have I tested Google Maps functionality?
+□ Have I verified Stripe payment processing?
+
+If ANY answer is "no", I MUST NOT proceed to release.
+</thinking>
+
+### Structure Validation Tests (REQUIRED FIRST)
+```bash
+# Run structure validation script
+node scripts/validate-structure.js
+
+# Content of validate-structure.js:
+# This script checks for:
+# 1. No duplicate files with case differences
+# 2. No code outside src/ directory
+# 3. Correct import paths used
+# 4. No root-level directories that should be in src/
+```
+
+### Firebase Integration Tests (REQUIRED)
+```bash
+# Run Firebase emulator for local testing
+npm run firebase:emulate
+
+# Run Firebase authentication tests
+npm run test:firebase-auth
+
+# Run Firestore database tests
+npm run test:firestore
+
+# Run Firebase storage tests
+npm run test:storage
+```
+
+### Google Maps Integration Tests (REQUIRED)
+```bash
+# Run Google Maps API tests
+npm run test:maps
+
+# Test route optimization
+npm run test:route-optimizer
+```
+
+### Stripe Integration Tests (REQUIRED)
+```bash
+# Run Stripe payment tests with test API keys
+npm run test:stripe-payment
+
+# Test subscription management
+npm run test:stripe-subscription
+```
+
+### Offline Functionality Tests (BLOCKER ⛔️)
+```bash
+# Test app in airplane mode
+npm run test:offline
+
+# Test data sync when coming back online
+npm run test:sync
+```
+
+### UI Tests (REQUIRED)
+```bash
+# Run UI component tests
+npm run test:ui
+
+# Test the Dispatch screen layout
+npm run test:screen:dispatch
+
+# Test the AppointmentList component
+npm run test:component:appointment-list
+
+# Test the RouteMap component
+npm run test:component:route-map
+```
+
+### Performance Tests (REQUIRED)
+```bash
+# Test startup performance
+npm run test:perf:startup
+
+# Test navigation between screens
+npm run test:perf:navigation
+
+# Test map rendering performance
+npm run test:perf:map
+
+# Test appointment list scrolling performance
+npm run test:perf:list-scroll
+```
+
+### Device Testing Checklist (REQUIRED)
+- Must test on:
+  □ Low-end Android device (e.g., Android 8+ with 2GB RAM)
+  □ Mid-range Android device
+  □ Test with actual GPS navigation
+  □ Test with different screen sizes
+  □ Test with different network conditions:
+    - Strong WiFi
+    - Weak cellular connection
+    - Switching between WiFi and cellular
+    - No network (offline mode)
+
+### API Integration Checklist (REQUIRED)
+- Firebase:
+  □ Authentication flow works (login, signup, password reset)
+  □ Firestore data reads/writes work
+  □ Storage uploads/downloads work
+  □ Offline persistence works
+
+- Google Maps:
+  □ Map loads correctly
+  □ Markers display at correct locations
+  □ Routes are calculated correctly
+  □ Optimize button works
+  □ Map caching works for offline use
+
+- Stripe:
+  □ Payment processing works
+  □ Receipt generation works
+  □ Subscription management works
+  □ Webhook integration works
+
+## Phase 5: Structure Maintenance
+
+⚠️ CRITICAL: MAINTAIN DIRECTORY STRUCTURE INTEGRITY ⚠️
+
+- Always run structure validation script before commits:
+  ```bash
+  # Add to pre-commit hook
+  npm run validate-structure
+  ```
+
+- Follow these structure rules:
+  1. ALWAYS place new files in appropriate subdirectories of `src/`
+  2. NEVER create new directories at root level
+  3. NEVER create files with similar names in different paths (e.g., `Navigation.tsx` and `navigation.tsx`)
+  4. ALWAYS use consistent casing:
+     - Component files: PascalCase (MyComponent.tsx)
+     - Non-component files: camelCase (myUtils.ts)
+     - Directories: camelCase (components, screens)
+  5. NEVER create duplicate functionality in different locations
+  6. ALWAYS add new features to matching existing directories
+  7. WHEN UNSURE about file placement, run directory check:
+     ```bash
+     # Show allowed directories for file placement
+     npx ts-node scripts/check-file-placement.js --file=MyNewComponent.tsx
+     ```
+
+## Phase 6: Implementation Patterns
+
+### Firebase Implementation Pattern
+```typescript
+// src/services/database/firebaseService.ts
+import { initializeApp } from 'firebase/app';
+import { getFirestore, enablePersistence, collection, doc, setDoc, getDoc } from 'firebase/firestore';
+import { FIREBASE_CONFIG } from '../../constants/config';
+
+// Initialize Firebase
+const app = initializeApp(FIREBASE_CONFIG);
+const db = getFirestore(app);
+
+// Enable offline persistence
+enablePersistence(db, { synchronizeTabs: true }).catch((err) => {
+  console.error('Firebase persistence error:', err.code);
+});
+
+// Typed collection references
+export const customersCollection = collection(db, 'customers');
+export const petsCollection = collection(db, 'pets');
+export const appointmentsCollection = collection(db, 'appointments');
+
+// CRUD operations with error handling and offline support
+export const createDocument = async <T>(collectionName: string, docId: string, data: T): Promise<void> => {
+  try {
+    await setDoc(doc(db, collectionName, docId), data, { merge: true });
+    console.log(`Document ${docId} successfully written to ${collectionName}`);
+  } catch (error) {
+    console.error(`Error writing document to ${collectionName}:`, error);
+    // Queue for offline sync if needed
+    throw error;
+  }
+};
+
+// Always include detailed error handling
+```
+
+### Google Maps Implementation Pattern
+```typescript
+// src/services/location/mapsService.ts
+import { GOOGLE_MAPS_CONFIG } from '../../constants/config';
+import * as Location from 'expo-location';
+import { Client, TravelMode } from '@googlemaps/google-maps-services-js';
+
+// Initialize the Google Maps client
+const client = new Client({});
+
+// Request location permissions early
+export const requestLocationPermissions = async (): Promise<boolean> => {
+  try {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    return status === 'granted';
+  } catch (error) {
+    console.error('Error requesting location permissions:', error);
+    return false;
+  }
+};
+
+// Calculate route between coordinates
+export const calculateRoute = async (
+  origins: [number, number][],
+  destinations: [number, number][],
+): Promise<any> => {
+  try {
+    const response = await client.distancematrix({
+      params: {
+        origins: origins.map(coord => `${coord[0]},${coord[1]}`),
+        destinations: destinations.map(coord => `${coord[0]},${coord[1]}`),
+        mode: TravelMode.driving,
+        key: GOOGLE_MAPS_CONFIG.apiKey,
+      },
+    });
+    
+    return response.data;
+  } catch (error) {
+    console.error('Error calculating route:', error);
+    // Implement offline fallback
+    throw error;
+  }
+};
+
+// Route optimization algorithm
+export const optimizeRoute = (appointments: any[]): any[] => {
+  // Implementation of traveling salesman problem algorithm
+  // Return optimized appointment order
+  return appointments.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+};
+```
+
+### Stripe Implementation Pattern
+```typescript
+// src/services/payments/stripeService.ts
+import { initStripe } from '@stripe/stripe-react-native';
+import { STRIPE_CONFIG } from '../../constants/config';
+
+// Initialize Stripe
+export const initializeStripe = async (): Promise<void> => {
+  try {
+    await initStripe({
+      publishableKey: STRIPE_CONFIG.publishableKey,
+      merchantIdentifier: 'merchant.com.waypoint',
+    });
+    console.log('Stripe initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize Stripe:', error);
+    throw error;
+  }
+};
+
+// Process payment
+export const processPayment = async (amount: number, currency: string, customerId: string): Promise<any> => {
+  try {
+    // Implementation
+    return { success: true };
+  } catch (error) {
+    console.error('Payment processing error:', error);
+    // Handle offline case
+    throw error;
+  }
+};
+
+// Generate receipt
+export const generateReceipt = async (paymentId: string): Promise<string> => {
+  try {
+    // Implementation
+    return 'receipt_url';
+  } catch (error) {
+    console.error('Receipt generation error:', error);
+    throw error;
+  }
+};
+```
+
+## Phase 7: Release Preparation
+❗ STOP AND VERIFY:
+□ All tests pass with ≥80% coverage
+□ No ESLint errors or warnings
+□ No TypeScript errors
+□ No circular dependencies
+□ All features work offline
+□ Firebase integration is working properly
+□ Google Maps integration is working properly
+□ Stripe payment processing is working properly
+□ Synchronization works when connectivity is restored
+
+Only after ALL checks pass can you prepare for release:
+```bash
+# Run final check
+npm run check-all
+
+# Build Android app
+eas build --platform android --profile production
+```
+
+## Code Quality Requirements
+- ✓ Components MUST have comprehensive tests
+- ✓ All database operations MUST handle offline mode
+- ✓ All network requests MUST use retry and queue mechanisms
+- ✓ All screens MUST implement proper loading and error states
+- ✓ All forms MUST include validation with Formik+Yup
+- ✓ All API keys MUST be stored in environment variables
+- ✓ Firebase security rules MUST be properly configured
+- ✓ Stripe integration MUST use test keys in development
+- ⛔️ NEVER skip tests before merging or releasing
+- ⛔️ NEVER hardcode API keys in source code
+- ⛔️ NEVER store sensitive data unencrypted
+
+## Feature Requirements
+
+### Firebase Requirements
+- ✓ Authentication MUST include email/password and Google Sign-In
+- ✓ Firestore security rules MUST restrict access properly
+- ✓ Data model MUST follow NoSQL best practices
+- ✓ Cloud Functions MUST handle background processing
+- ✓ File storage MUST include retry logic for uploads
+- ✓ Offline persistence MUST be enabled
+- ✓ Firestore transactions MUST be used for critical operations
+
+### Google Maps Requirements
+- ✓ Maps MUST be cached for offline use
+- ✓ Routes MUST be pre-calculated when possible
+- ✓ ETA calculations MUST handle offline scenarios
+- ✓ Location tracking MUST be battery-efficient
+- ✓ Maps MUST display pet location markers with custom icons
+- ✓ Routes MUST be color-coded for status (completed, upcoming)
+- ✓ Optimize button MUST rearrange appointments efficiently
+
+### Stripe Requirements
+- ✓ Payment processing MUST work offline (queue for later)
+- ✓ Receipts MUST be generated and shareable
+- ✓ Webhooks MUST handle payment status updates
+- ✓ Error handling MUST be comprehensive
+- ✓ Test mode MUST be used during development
+- ✓ Production keys MUST be restricted to production builds
+
+### Offline Functionality
+- ✓ All data operations MUST work offline
+- ✓ Changes MUST be queued for sync when back online
+- ✓ Conflict resolution strategy MUST be implemented
+- ✓ Critical operations MUST have offline fallbacks
+- ✓ Offline maps MUST be available for navigation
+- ✓ Cached data MUST have expiration policies
+
+### Customer Management
+- ✓ Customer profiles MUST include contact info, address, notes
+- ✓ Pet profiles MUST include breed, size, temperament, special needs
+- ✓ Photos MUST be optimized for mobile storage
+- ✓ Notes MUST sync bidirectionally
+- ✓ Customer history MUST be searchable
+- ✓ Contact methods MUST be integrated with device (call, text, email)
+
+### Appointment Management
+- ✓ Calendar MUST support day/week/month views
+- ✓ Appointments MUST include travel time between locations
+- ✓ Scheduling MUST prevent overlapping appointments
+- ✓ Notifications MUST work offline
+- ✓ Recurring appointments MUST be supported
+- ✓ Appointment details MUST include service notes, duration, price
+
+### UI Requirements
+- ✓ UI MUST match the provided mockup for the Dispatch screen
+- ✓ Map and appointment list MUST be responsive to different screen sizes
+- ✓ All interactive elements MUST have minimum touch target size of 44x44
+- ✓ Color contrast MUST meet accessibility standards
+- ✓ Loading states MUST be shown during data fetching
+- ✓ Error states MUST provide recovery options
+
+## Commit Message Format
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+Allowed types:
+- feat: New feature
+- fix: Bug fix
+- docs: Documentation
+- style: Formatting
+- refactor: Code restructuring
+- perf: Performance improvements
+- test: Adding tests
+- build: Build system changes
+- ci: CI configuration
+- chore: Maintenance tasks
+
+Scopes:
+- customer
+- pet
+- appointment
+- route
+- payment
+- auth
+- ui
+- offline
+- sync
+- firebase
+- maps
+- stripe
+
+## Performance Benchmarks
+- App startup: < 2 seconds
+- Screen transition: < 300ms
+- Offline data access: < 100ms
+- Map rendering: < 500ms
+- Battery usage: < 5% per hour of active use
+- Storage: < 100MB base installation
+
+## Security Requirements
+- ✓ All API keys MUST be secured
+- ✓ Customer data MUST be encrypted
+- ✓ Payment information MUST NOT be stored locally
+- ✓ Authentication MUST timeout after inactivity
+- ✓ Firebase security rules MUST limit access appropriately
+- ✓ JWT tokens MUST be securely stored
+- ✓ No sensitive information in logs
